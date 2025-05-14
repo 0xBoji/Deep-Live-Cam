@@ -9,6 +9,29 @@ if platform.system() == "Windows":
     from pygrabber.dshow_graph import FilterGraph
 
 
+class DummyCamera:
+    """A dummy camera that returns a black frame"""
+    def __init__(self, width=960, height=540):
+        self.width = width
+        self.height = height
+        self.is_open = True
+
+    def isOpened(self):
+        return self.is_open
+
+    def read(self):
+        # Create a black frame
+        frame = np.zeros((self.height, self.width, 3), dtype=np.uint8)
+        return True, frame
+
+    def set(self, prop, value):
+        # Dummy implementation
+        return True
+
+    def release(self):
+        self.is_open = False
+
+
 class VideoCapturer:
     def __init__(self, device_index: int):
         self.device_index = device_index
@@ -31,6 +54,8 @@ class VideoCapturer:
     def start(self, width: int = 960, height: int = 540, fps: int = 60) -> bool:
         """Initialize and start video capture"""
         try:
+            print(f"Attempting to open camera with index: {self.device_index}")
+
             if platform.system() == "Windows":
                 # Windows-specific capture methods
                 capture_methods = [
@@ -49,11 +74,30 @@ class VideoCapturer:
                     except Exception:
                         continue
             else:
-                # Unix-like systems (Linux/Mac) capture method
-                self.cap = cv2.VideoCapture(self.device_index)
+                # macOS with virtual camera - try multiple approaches
+                capture_methods = [
+                    (self.device_index, cv2.CAP_ANY),  # Try with default backend
+                    (self.device_index, cv2.CAP_AVFOUNDATION),  # Try with AVFoundation
+                    (0, cv2.CAP_ANY),  # Try index 0 with default backend
+                    (0, cv2.CAP_AVFOUNDATION),  # Try index 0 with AVFoundation
+                ]
+
+                for dev_id, backend in capture_methods:
+                    try:
+                        print(f"Trying camera {dev_id} with backend {backend}")
+                        self.cap = cv2.VideoCapture(dev_id, backend)
+                        if self.cap.isOpened():
+                            print(f"Successfully opened camera {dev_id} with backend {backend}")
+                            break
+                        self.cap.release()
+                    except Exception as e:
+                        print(f"Failed to open camera {dev_id} with backend {backend}: {str(e)}")
+                        continue
 
             if not self.cap or not self.cap.isOpened():
-                raise RuntimeError("Failed to open camera")
+                # Create a dummy camera with a black frame if no camera is available
+                print("No camera available, creating dummy camera with black frame")
+                self.cap = DummyCamera(width, height)
 
             # Configure format
             self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)

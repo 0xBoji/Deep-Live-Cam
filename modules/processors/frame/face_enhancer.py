@@ -64,8 +64,13 @@ def get_face_enhancer() -> Any:
 
     with THREAD_LOCK:
         if FACE_ENHANCER is None:
-            model_path = os.path.join(models_dir, "GFPGANv1.4.pth")
-            
+            # Try to load different enhancer models in order of preference
+            model_candidates = [
+                "GFPGANv1.4.pth",  # Default GFPGAN model
+                "RestoreFormer.pth",  # RestoreFormer model (if available)
+                "codeformer.pth"  # CodeFormer model (if available)
+            ]
+
             selected_device = None
             device_priority = []
 
@@ -81,8 +86,31 @@ def get_face_enhancer() -> Any:
             elif not torch.cuda.is_available():
                 selected_device = torch.device("cpu")
                 device_priority.append("CPU")
-            
-            FACE_ENHANCER = gfpgan.GFPGANer(model_path=model_path, upscale=1, device=selected_device)
+
+            # Try to load models in order of preference
+            for model_name in model_candidates:
+                model_path = os.path.join(models_dir, model_name)
+                if os.path.exists(model_path):
+                    print(f"Loading face enhancer model: {model_name}")
+                    try:
+                        # Use higher upscale for better quality if using CPU
+                        upscale = 1.5 if selected_device == torch.device("cpu") else 1.2
+                        FACE_ENHANCER = gfpgan.GFPGANer(
+                            model_path=model_path,
+                            upscale=upscale,
+                            device=selected_device,
+                            bg_upsampler=None  # Set to None for faster processing
+                        )
+                        break
+                    except Exception as e:
+                        print(f"Failed to load {model_name}: {str(e)}")
+                        continue
+
+            # Fallback to default if no models were loaded
+            if FACE_ENHANCER is None:
+                print("No face enhancer model found, using default GFPGAN")
+                model_path = os.path.join(models_dir, "GFPGANv1.4.pth")
+                FACE_ENHANCER = gfpgan.GFPGANer(model_path=model_path, upscale=1, device=selected_device)
 
             # for debug:
             print(f"Selected device: {selected_device} and device priority: {device_priority}")

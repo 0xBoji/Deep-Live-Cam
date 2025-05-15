@@ -60,10 +60,21 @@ def get_face_swapper() -> Any:
 
     with THREAD_LOCK:
         if FACE_SWAPPER is None:
+            # Use the model that we know works
             model_path = os.path.join(models_dir, "inswapper_128_fp16.onnx")
-            FACE_SWAPPER = insightface.model_zoo.get_model(
-                model_path, providers=modules.globals.execution_providers
-            )
+
+            if os.path.exists(model_path):
+                print(f"Loading face swapper model: inswapper_128_fp16.onnx")
+                try:
+                    FACE_SWAPPER = insightface.model_zoo.get_model(
+                        model_path, providers=modules.globals.execution_providers
+                    )
+                except Exception as e:
+                    print(f"Failed to load model: {str(e)}")
+                    raise
+            else:
+                print("Model not found: inswapper_128_fp16.onnx")
+                raise FileNotFoundError("Required model file not found")
     return FACE_SWAPPER
 
 
